@@ -54,6 +54,7 @@ __pypackages__/
 *.utf8.md
 *.knit.md
 *.md
+!README.md
 
 # Quarto metadata
 .quarto/
