@@ -1,0 +1,16 @@
+---
+title: "Species Report"
+format:
+  html: 
+    embed-resources: true
+params:
+  aphiaid: null
+  theme: "blue"
+  output_type: "dynamic"
+---
+
+```{r}
+cat("Species AphiaID:", params$aphiaid, "\n")
+cat("Species AphiaID:", params$theme, "\n")
+cat("Species AphiaID:", params$output_type, "\n")
+```

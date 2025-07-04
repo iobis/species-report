@@ -1,0 +1,65 @@
+---
+title: ""
+format:
+  html:
+    css: styles.css
+    embed-resources: true
+include-in-header:
+    - text: |
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+    - material-symbols.html
+mainfont: DM Sans
+page-layout: custom
+---
+
+::: {.grid}
+
+::: {.g-col-2 style="background-color: #004aad; padding: 20px; display: flex; flex-direction: column; justify-content: center;"}
+
+::: {.row}
+
+::: {.col style="justify-content: space-between; display: flex;"}
+<div><span style="color: white; font-size: 15px; font-weight: bold;">AphiaID</span></div>
+<div><span class="material-symbols-outlined" style="color: white;">arrow_outward</span></div>
+:::
+
+::: {.col}
+<span style=" font-size: 26px; font-weight: bold; color: white;">367850</span>
+
+:::
+
+:::
+
+
+:::
+
+::: {.g-col-6 style="padding: 20px;"}
+<span style="font-size: 42px; color: #004aad; font-family: DM Serif Display">Lytechinus variegatus</span><br>
+<span style="color: #004aad; font-size: 17px">Green-sea-urchin</span>
+:::
+
+::: {.g-col-4 style="padding: 20px; align-self: center;  align-items: flex-start;"}
+<img src="https://obis.org/images/logo.png" width="100%">
+:::
+
+:::
+
+
+
+
+::: {.grid}
+
+::: {.g-col-5 style="background-color: grey;"}
+<div class="image-container">
+  <img src="Lytechinus_variegatus.jpg" alt="Example image">
+</div>
+:::
+
+::: {.g-col-7 style="background-color: #f8f8f8;"}
+This an epibenthic, subtidal species found in seagrass, particularly Thalassia sp. beds and lagoonal mangrove cays.
+:::
+
+:::
+

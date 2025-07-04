@@ -1,0 +1,115 @@
+@page {
+  margin: 0 !important;
+  size: 315mm 445.5mm;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+    display: flex;
+    flex-direction: column;
+}
+
+
+.image-container {
+  min-height: 400px;         /* Or any desired height */
+  width: 100%;           /* Optional: controls how wide the container is */
+  overflow: hidden;      /* Crop anything that overflows */
+  position: relative;
+}
+
+.image-container img {
+  width: 100%;          /* Fill the container's height */
+  height: auto;           /* Maintain aspect ratio */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);  /* Center the image horizontally */
+}
+
+.image-caption {
+  position: absolute;
+  bottom: 10px; /* or top: 10px; for top overlay */
+  left: 10px;
+  z-index: 1;
+  background-color: rgba(0, 0, 0, 0.6); /* semi-transparent background */
+  color: white;
+  padding: 5px 10px;
+  font-size: 8px;
+  max-width: 90%;
+  box-sizing: border-box;
+}
+
+.grid {
+    display: grid;
+    grid-template-rows: repeat(var(--bs-rows, 1), 1fr);
+    grid-template-columns: repeat(var(--bs-columns, 12), 1fr);
+    gap: 0px;
+}
+
+
+
+.big-number {
+  color: var(--report-main-color);
+  font-size: 38px;
+  font-weight: 900;
+}
+
+.sources-small {
+  color: var(--report-main-color);
+  font-size: 17px;
+}
+
+.plot-title {
+  color: var(--report-main-color);
+  font-size: 42px;
+  font-weight: 700;
+}
+
+.plot-separator {
+  border: 1px solid var(--report-main-color);
+  margin-top: 20px;
+  margin-right: 20px;
+  margin-left: 20px;
+  opacity: 1 !important;
+
+}
+
+.qr-small img{
+  width: 110px !important;
+  height: 110px !important;
+}
+
+.qr-span-rotated {
+    color: white;
+    font-size: 20px;
+    /* transform: rotate(-90deg); */
+    /* letter-spacing: 2px; */
+    /* margin: 30px 0px 0px 0px; */
+    display: inline-block;
+    transform: rotate(-90deg);
+    /* transform-origin: left top; */
+    white-space: nowrap;
+    margin-left: 15px;
+    margin-right: -55px;
+    /* margin: 0; */
+    padding: 0;
+}
+
+.qr-span-rotated-b {
+    color: white;
+    font-size: 20px;
+    /* transform: rotate(-90deg); */
+    /* letter-spacing: 2px; */
+    /* margin: 30px 0px 0px 0px; */
+    display: inline-block;
+    transform: rotate(-90deg);
+    /* transform-origin: left top; */
+    white-space: nowrap;
+    margin-left: 25px;
+    margin-right: -38px;
+    /* margin: 0; */
+    padding: 0;
+}

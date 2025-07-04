@@ -1,0 +1,658 @@
+---
+title: ""
+format:
+  html:
+    css: styles.css
+    embed-resources: true
+include-in-header:
+    # - text: |
+    #     <link rel="preconnect" href="https://fonts.googleapis.com">
+    #     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    #     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+    - material-symbols.html
+#mainfont: DM Sans
+page-layout: custom
+params:
+  aphiaid: 367850
+  colorschema: "blue"
+  dynamic: true
+---
+
+``` {r}
+#| echo: false
+default_color <- "#004aad"
+if (is.null(params$colorschema)) {
+  main_color <- default_color
+} else if (params$colorschema == "") {
+  main_color <- default_color
+} else if (params$colorschema != "") {
+  if (params$colorschema == "blue") {
+    main_color <- "#004aad"
+  }
+  if (params$colorschema == "green") {
+    main_color <- "#00ad7e"
+  }
+  if (params$colorschema == "orange") {
+    main_color <- "#df8e05"
+  }
+  if (params$colorschema == "red") {
+    main_color <- "#c40455"
+  }
+}
+
+if (params$dynamic) {
+  print_mode <- "dynamic"
+} else {
+  print_mode <- "print"
+}
+
+htmltools::HTML(
+  paste0("<style>
+  :root {
+    --report-main-color: ", main_color, " !important;
+  }
+  </style>")
+)
+```
+
+```{r}
+#| eval: true
+#| echo: false
+#| warning: false
+#| message: false
+
+taxon <- robis::taxon(params$aphiaid)
+gbif_key <- rgbif::name_backbone(
+    paste(taxon$species, taxon$scientificNameAuthorship)
+)
+gbif_key <- gbif_key$usageKey
+
+taxon_text <- paste0(taxon$kingdom, " (Kingdom) > ")
+if (!is.na(taxon$phylum)) {
+    taxon_text <- paste0(taxon_text, taxon$phylum, " (Phylum) > ")
+}
+if (!is.na(taxon$class)) {
+    taxon_text <- paste0(taxon_text, taxon$class, " (Class) > ")
+}
+if (!is.na(taxon$order)) {
+    taxon_text <- paste0(taxon_text, taxon$order, " (Order) > ")
+}
+if (!is.na(taxon$family)) {
+    taxon_text <- paste0(taxon_text, taxon$family, " (Family) > ")
+}
+if (!is.na(taxon$genus)) {
+    taxon_text <- paste0(taxon_text, taxon$genus, " (Genus) > ")
+}
+if (!is.na(taxon$species)) {
+    taxon_text <- paste0(taxon_text, taxon$species, " (Species)")
+}
+
+vernacular <- try(worrms::wm_common_id(id = params$aphiaid), silent = T)
+if (!inherits(vernacular, "try-error")) {
+    vernacular <- vernacular[vernacular$language_code == "eng", "vernacular"][[1]]
+    if (length(vernacular) > 1) {
+        vernacular <- paste(vernacular[1:3], collapse = ", ")
+    }
+} else {
+    vernacular <- ""
+}
+
+# Get GBIF image
+image_resp <- httr::content(httr::GET(
+    paste0("https://api.gbif.org/v1/species/", gbif_key, "/media?limit=10")
+), "parsed")
+image_resp <- do.call("rbind", lapply(image_resp$results, \(x){
+    data.frame(creator = x$creator, link = x$identifier)
+}))
+# positive <- FALSE
+# i <- 1
+# while(!positive & i <= nrow(image_resp)) {
+#   i <- i + 1
+#   resp <- try(httr::GET(image_resp$link[i]))
+#   if (inherits(resp, "try-error")) next
+#   if (resp$status_code != 200) {
+#     next
+#   } else {
+#     image_resp <- image_resp[i,]
+#     positive <-TRUE
+#   } 
+# }
+# if (!positive) {
+#   image_resp <- data.frame(creator = "", link = "images/image_avatar.png")
+# }
+
+# Get fishbase content
+# Get info from Fishbase, if available
+fish_base_info <- rfishbase::species(taxon$species)
+if (nrow(fish_base_info) < 1) {
+  fish_base_info <- rfishbase::species(taxon$species, server = "sealifebase")
+  if (nrow(fish_base_info) > 0) {
+    fish_base_info$source <- "SeaLifeBase"
+  }
+} else {
+  fish_base_info$source <- "FishBase"
+}
+
+if (nrow(fish_base_info) > 0) {
+  species_content <- list(
+    content = gsub(" \\(Ref\\. [0-9,; ]+\\)", "", fish_base_info$Comments),
+    source_name = fish_base_info$source,
+    source = ifelse(fish_base_info$source == "FishBase",
+                    paste0("https://www.fishbase.org/summary/", gsub(" ", "_", taxon$species), ".html"),
+                    paste0("https://www.sealifebase.se/summary/", gsub(" ", "-", taxon$species), ".html"))
+  )
+} else {
+  species_content <- list(content = "No information available.", source_name = "", source = "")
+}
+
+species_records <- httr::GET(paste0(
+  "https://api.obis.org/v3/occurrence/grid/3?taxonid=", params$aphiaid
+))
+species_records <- httr::content(species_records, as = "parsed")
+features <- species_records$features
+
+# Extract coordinates and build polygon list
+polygon_list <- lapply(features, function(feature) {
+  coords <- feature$geometry$coordinates[[1]]
+  mat <- do.call(rbind, lapply(coords, function(x) c(x[[1]], x[[2]])))
+  list(mat)  # Wrap in list for st_polygon
+})
+
+# Extract properties (e.g., 'n')
+properties <- do.call(rbind, lapply(features, function(feature) {
+  as.data.frame(feature$properties, stringsAsFactors = FALSE)
+}))
+
+# Create sf object
+species_records <- sf::st_sf(
+  properties,
+  geometry = sf::st_sfc(
+    lapply(polygon_list, sf::st_polygon),
+    crs = 4326  # Set appropriate CRS if known
+  )
+)
+
+# Get environmental
+env <- httr::content(httr::GET(paste0("https://api.obis.org/v3/statistics/env?taxonid=", params$aphiaid)))
+
+sst <- dplyr::bind_rows(env$sst)
+sss <- dplyr::bind_rows(env$sss)
+depth <- dplyr::bind_rows(env$depth)
+colnames(depth) <- colnames(sss) <- colnames(sst) <- c("parameter", "records")
+```
+
+<!-- Line 1 -->
+::: {.grid}
+
+::: {.g-col-10 style="background-color: #545454; padding-top: 10px; padding-bottom: 10px; padding-left: 20px;"}
+<span style="color: white; font-size: 40px; font-weight: bold;">Species Data Sheet</span>
+
+:::
+
+::: {.g-col-2 style="background-color: #000000; padding: 10px 20px; display: flex; justify-content: center; align-items: center; height: 100%;"}
+<img src="images/obis_logo.png" style="height: 45px;">
+
+:::
+
+:::
+
+<!-- Line 2 -->
+::: {.grid}
+
+::: {.g-col-10 style="background-color: #f4f6fc; padding-top: 10px; padding-bottom: 10px; padding-left: 20px;"}
+<span style="font-size: 42px; color: var(--report-main-color); font-family: DM Serif Display">`{r} taxon$species`</span><br>
+<span style="color: var(--report-main-color); font-size: 17px">`{r} vernacular`</span>
+
+:::
+
+::: {.g-col-2 style="background-color: var(--report-main-color); padding: 20px; display: flex; flex-direction: column; justify-content: center;"}
+
+::: {.row}
+
+::: {.col style="justify-content: space-between; display: flex;"}
+<div><span style="color: white; font-size: 15px; font-weight: bold;">AphiaID</span></div>
+<div><span class="material-symbols-outlined" style="color: white;">arrow_outward</span></div>
+
+:::
+
+::: {.col}
+<span style=" font-size: 26px; font-weight: bold; color: white;">`{r} htmltools::a(params$aphiaid, href = paste0("https://obis.org/taxon/", params$aphiaid), style="color: white; text-decoration: none;")`</span>
+
+:::
+
+:::
+
+:::
+
+:::
+
+
+<!-- Line 3 -->
+::: {.grid}
+
+::: {.g-col-5 style="background-color: grey;"}
+<div class="image-container">
+  `{r} htmltools::span(paste("Source:", ifelse(
+    nchar(paste0(image_resp$creator[1], " | Through GBIF")) > 50,
+    paste0(strtrim(image_resp$creator[1], 47), "... | through GBIF"),
+    paste0(image_resp$creator[1], " | through GBIF")
+  )), class="image-caption")`
+  `{r} htmltools::img(src = image_resp$link[1], alt = image_resp$creator[1])`
+</div>
+:::
+
+::: {.g-col-7 style="background-color: #f8f8f8; display: flex; flex-direction: column; justify-content: space-between; padding: 30px;"}
+
+<div>
+<p style="font-size: 19px;">`{r} htmltools::span(htmltools::HTML(paste0("<p>", species_content$content, "</p>")))`</p>
+</div>
+
+<div style="color: #737373;">`{r} htmltools::a(paste0("Source: ", ifelse(
+  print_mode == "dynamic", species_content$source_name,
+  paste0(species_content$source_name, " (", species_content$source, ")")
+)), href = species_content$source, style="color: #737373; text-decoration: none;")`<span class="material-symbols-outlined">arrow_outward</span></div>
+
+:::
+
+:::
+
+<!-- Line 4 - map and stats -->
+::: {.grid}
+
+::: {.g-col-8 style="padding: 20px;"}
+
+``` {r}
+#| echo: false
+#| warning: false
+#| column: screen
+#| fig-width: 10
+#| fig-align: center
+library(ggplot2)
+
+species_data <- robis::occurrence(taxonid = params$aphiaid)
+
+wrld <- rnaturalearth::ne_countries(returnclass = "sf")
+
+ggplot() +
+    geom_sf(data = wrld, fill = "grey80", color = "grey80") +
+    geom_sf(data = species_records, aes(fill = n), color = "#00990000", linewidth = 0) +
+    scale_fill_distiller(palette = "Blues") +
+    theme_light() +
+    theme(axis.text = element_blank(), panel.border = element_blank(), legend.position = "none") +
+    scale_x_continuous(expand = c(0,0)) + scale_y_continuous(expand = c(0,0))
+
+redlist <- httr::content(httr::GET(paste0(
+  "https://api.obis.org/v3/taxon/", species_data$aphiaID[1]
+)))$results[[1]]$category
+
+if (is.null(redlist) || redlist == "") {
+  redlist <- "N/A"
+} else {
+  redlist <- as.vector(redlist)[1]
+}
+```
+
+:::
+
+::: {.g-col-4 style="display: flex; flex-direction: column; justify-content: center;"}
+
+<div style="display: flex; flex-direction: column; padding: 10px; padding-left: 100px;"><span class="big-number">`{r} nrow(species_data)`</span><span class="sources-small">records on OBIS</span></div>
+
+<div style="display: flex; flex-direction: column; padding: 10px; padding-left: 100px;"><span class="big-number">`{r} paste(range(species_data$date_year, na.rm = T), collapse="-")`</span><span class="sources-small">time range</span></div>
+
+<div style="display: flex; flex-direction: column; padding: 10px; padding-left: 100px;"><span class="big-number">`{r} redlist`</span><span class="sources-small">IUCN Red List status</span></div>
+
+:::
+
+:::
+
+<!-- Line 5 - taxonomy -->
+::: {.grid}
+
+::: {.g-col-10 style="background-color: #f4f6fc; padding-top: 10px; padding-bottom: 10px; padding-left: 20px;"}
+<span class="plot-title">Taxonomy</span><br>
+<span style="font-size: 17px">`{r} taxon_text`</span>
+
+:::
+
+``` {r}
+#| echo: false
+#| results: 'asis'
+
+if (print_mode == "dynamic") {
+  main_content <- htmltools::div(
+    style="display: flex; flex-direction: row; justify-content: space-between;",
+    htmltools::span(
+      style=" font-size: 30px; font-weight: bold; color: white;",
+       htmltools::a("WoRMS", href = paste0("https://www.marinespecies.org/aphia.php?p=taxdetails&id=", params$aphiaid), style="color: white; text-decoration: none;")
+    ),
+    htmltools::span(class="material-symbols-outlined", style="color: white; font-size: 40px; margin-top: 2px;", "arrow_outward")
+  )
+} else {
+  main_content <- htmltools::div(
+    style="display: flex; flex-direction: row;", class="qr-small",
+    htmltools::span("WoRMS", class="qr-span-rotated"),
+    htmltools::plotTag(
+      plot(qrcode::qr_code(paste0("https://www.marinespecies.org/aphia.php?p=taxdetails&id=", params$aphiaid)), col = c(main_color, "white")),
+      alt = paste0("https://www.marinespecies.org/aphia.php?p=taxdetails&id=", params$aphiaid)
+    )
+  )
+}
+
+htmltools::div(
+  class = "g-col-2",
+  style="background-color: var(--report-main-color); padding: 20px; display: flex; flex-direction: column; justify-content: center;",
+  main_content
+)
+```
+
+:::
+
+<!-- test -->
+
+<!--<div style="height: 475px; background-color: blue;">Test</div>-->
+
+
+<!-- Line 5 - temperature -->
+
+::: {.grid}
+
+::: {.g-col-12 style="padding: 20px; height: 460px;"}
+
+<!--<span class="plot-title" style="font-size: 48px;">Environmental conditions</span>-->
+
+<span class="plot-title">Temperature</span>
+
+``` {r}
+#| echo: false
+#| warning: false
+#| column: screen
+#| fig-width: 11
+#| fig-height: 3.5
+#| fig-align: center
+library(ggplot2)
+
+plot_theme <- theme_light() +
+ # scale_y_discrete(expand = c(0.05,0.01)) +
+  theme(panel.border = element_blank(), panel.grid.major.y = element_blank(),
+  panel.grid.minor.y = element_blank(), panel.grid.minor.x = element_blank(), 
+  # axis.text.y = element_blank(), 
+  legend.position = "none", 
+  # axis.title.y = element_blank(),
+  # axis.ticks.y = element_blank(),
+  axis.text.x = element_text(angle = 45))
+
+ggplot() +
+  geom_bar(data = sst, aes(x = as.factor(parameter), y = records), stat = "identity", fill = main_color) +
+    scale_x_discrete(
+        labels = paste(sst$parameter, sst$parameter + diff(sst$parameter[1:2]), sep = "-")
+    ) +
+#  geom_histogram(aes(x = sst), fill = main_color, color = "white", linewidth = 0.1, binwidth = 1) +
+#  geom_linerange(
+#     data = data.frame(xmin = quantile(sst_d$sst, 0.05), xmax = quantile(sst_d$sst, 0.95)),
+#     aes(xmin = xmin, xmax = xmax, y = 0),
+#     linewidth = 1,color = "#bbbbbb", position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.05), quantile(sst_d$sst, 0.95))),
+#     aes(x = sst_lims, y = 0),
+#     size = 2, color = main_color, position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.5))),
+#     aes(x = sst_lims, y = 0), shape = 21,
+#     size = 2, color = main_color, fill = "white", position = position_nudge(y = -9)
+#   ) +
+  labs(y = "Records", x = "Sea Surface Temperature (°C)") +
+  plot_theme
+```
+
+:::
+:::
+
+<!-- Line 6 - taxonomy -->
+<!-- <hr class="plot-separator"> -->
+
+::: {.grid}
+
+::: {.g-col-12 style="padding: 20px; height: 460px;"}
+
+<span class="plot-title">Salinity</span>
+
+``` {r}
+#| echo: false
+#| warning: false
+#| column: screen
+#| fig-width: 11
+#| fig-height: 3.5
+#| fig-align: center
+ggplot() +
+  geom_bar(data = sss, aes(x = as.factor(parameter), y = records), stat = "identity", fill = main_color) +
+    scale_x_discrete(
+        labels = paste(sss$parameter, sss$parameter + diff(sss$parameter[1:2]), sep = "-")
+    ) +
+#  geom_histogram(aes(x = sst), fill = main_color, color = "white", linewidth = 0.1, binwidth = 1) +
+#  geom_linerange(
+#     data = data.frame(xmin = quantile(sst_d$sst, 0.05), xmax = quantile(sst_d$sst, 0.95)),
+#     aes(xmin = xmin, xmax = xmax, y = 0),
+#     linewidth = 1,color = "#bbbbbb", position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.05), quantile(sst_d$sst, 0.95))),
+#     aes(x = sst_lims, y = 0),
+#     size = 2, color = main_color, position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.5))),
+#     aes(x = sst_lims, y = 0), shape = 21,
+#     size = 2, color = main_color, fill = "white", position = position_nudge(y = -9)
+#   ) +
+  labs(y = "Records", x = "Salinity") +
+  plot_theme
+```
+
+:::
+:::
+
+<!-- Line 7 - graphs -->
+<hr class="plot-separator">
+
+::: {.grid}
+
+::: {.g-col-12 style="padding: 20px; height: 460px;"}
+
+<span class="plot-title">Bathymetry</span>
+
+``` {r}
+#| echo: false
+#| warning: false
+#| column: screen
+#| fig-width: 11
+#| fig-height: 3.5
+#| fig-align: center
+ggplot() +
+  geom_bar(data = depth, aes(x = as.factor(parameter), y = records), stat = "identity", fill = main_color) +
+    scale_x_discrete(
+        labels = paste(depth$parameter, depth$parameter + diff(depth$parameter[1:2]), sep = "-")
+    ) +
+#  geom_histogram(aes(x = sst), fill = main_color, color = "white", linewidth = 0.1, binwidth = 1) +
+#  geom_linerange(
+#     data = data.frame(xmin = quantile(sst_d$sst, 0.05), xmax = quantile(sst_d$sst, 0.95)),
+#     aes(xmin = xmin, xmax = xmax, y = 0),
+#     linewidth = 1,color = "#bbbbbb", position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.05), quantile(sst_d$sst, 0.95))),
+#     aes(x = sst_lims, y = 0),
+#     size = 2, color = main_color, position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.5))),
+#     aes(x = sst_lims, y = 0), shape = 21,
+#     size = 2, color = main_color, fill = "white", position = position_nudge(y = -9)
+#   ) +
+  labs(y = "Records", x = "Depth (m)") +
+  plot_theme
+```
+
+:::
+:::
+
+<!-- Line 8 - sources -->
+::: {.grid}
+
+::: {.g-col-5 style="background-color: #f8f8f8; padding-top: 30px; padding-bottom: 10px; padding-left: 40px; height: 210px; padding-right: 40px;"}
+
+<div>
+<div><span style="font-size: 42px; color: var(--report-main-color); font-weight: bold;">Sources</span></div>
+
+<div id="sources-row" style="display: flex; justify-content: space-between; padding-top: 20px;">
+
+<div><span class="big-number">`{r} length(unique(species_data$dataset_id))`</span><br><span class="sources-small">Datasets</span></div>
+<div><span class="big-number">`{r} length(unique(species_data$node_id))`</span><br><span class="sources-small">Nodes</span></div>
+<div><span class="big-number">`{r} length(unique(species_data$institutionCode))`</span><br><span class="sources-small">Institutions</span></div>
+
+</div>
+
+</div>
+
+:::
+
+::: {.g-col-5 style="background-color: #f8f8f8; padding-top: 20px; padding-bottom: 10px; padding-left: 20px; padding-right: 20px; align-content: space-evenly;"}
+
+Our knowledge of the distribution of this species is the result of the contributions from the OBIS Community, including researchers and the OBIS Nodes. You can consult here on which datasets made this possible.
+
+:::
+
+``` {r}
+#| echo: false
+#| results: 'asis'
+
+if (print_mode == "dynamic") {
+  main_content <- htmltools::div(
+    style="display: flex; flex-direction: row; justify-content: space-between;",
+    htmltools::span(
+      style=" font-size: 42px; font-weight: bold; color: white;",
+       htmltools::a("OBIS", href = paste0("https://obis.org/taxon/", params$aphiaid), style="color: white; text-decoration: none;")
+    ),
+    htmltools::span(class="material-symbols-outlined", style="color: white; font-size: 55px; margin-top: 4px;", "arrow_outward")
+  )
+} else {
+  main_content <- htmltools::div(
+    style="display: flex; flex-direction: row;", class="qr-small",
+    htmltools::span("OBIS", class="qr-span-rotated-b"),
+    htmltools::plotTag(
+      plot(qrcode::qr_code(paste0("https://obis.org/taxon/", params$aphiaid)), col = c(main_color, "white")),
+      alt = paste0("https://obis.org/taxon/", params$aphiaid)
+    )
+  )
+}
+
+htmltools::div(
+  class = "g-col-2",
+  style="background-color: var(--report-main-color); padding: 20px; display: flex; flex-direction: column; justify-content: center;",
+  main_content
+)
+```
+
+:::
+
+<!-- main datasets -->
+
+::: {.grid}
+
+::: {.g-col-10 style="background-color: #f8f8f8; padding-top: 30px; padding-bottom: 10px; padding-left: 40px; height: 240.5px; padding-right: 40px;"}
+
+``` {r}
+#| echo: false
+#| warning: false
+#| column: screen
+#| fig-width: 11
+#| fig-height: 2.5
+#| fig-align: center
+records_time <- httr::content(
+  httr::GET(
+    paste0("https://api.obis.org/v3/statistics/years?taxonid=", params$aphiaid)
+  )
+)
+records_time <- dplyr::bind_rows(records_time)
+
+records_time$records <- cumsum(records_time$records)
+
+ggplot(records_time) +
+    geom_line(aes(x = year, y = records), color = main_color) +
+    geom_point(aes(x = year, y = records), color = main_color) +
+#  geom_histogram(aes(x = sst), fill = main_color, color = "white", linewidth = 0.1, binwidth = 1) +
+#  geom_linerange(
+#     data = data.frame(xmin = quantile(sst_d$sst, 0.05), xmax = quantile(sst_d$sst, 0.95)),
+#     aes(xmin = xmin, xmax = xmax, y = 0),
+#     linewidth = 1,color = "#bbbbbb", position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.05), quantile(sst_d$sst, 0.95))),
+#     aes(x = sst_lims, y = 0),
+#     size = 2, color = main_color, position = position_nudge(y = -9)
+#   ) +
+#   geom_point(
+#     data = data.frame(sst_lims = c(quantile(sst_d$sst, 0.5))),
+#     aes(x = sst_lims, y = 0), shape = 21,
+#     size = 2, color = main_color, fill = "white", position = position_nudge(y = -9)
+#   ) +
+  labs(y = "Records", x = NULL) +
+  plot_theme + theme(plot.background = element_rect(fill = "#f8f8f8", color ="#f8f8f8"), panel.background = element_rect(fill = "#f8f8f8", color="#f8f8f8"))
+```
+
+:::
+
+::: {.g-col-2 style="background-color: black; padding: 20px; display: flex; flex-direction: column; justify-content: center;"}
+
+<span style=" font-size: 12px; color: white;">You can also explore this species in the OBIS</span>
+
+<div style="display: flex; flex-direction: row; justify-content: space-between;"><span style=" font-size: 26px; font-weight: bold; color: white;">`{r} htmltools::a("MAPPER", href = paste0("https://mapper.obis.org/?taxonid=", species_data$aphiaID[1]), style="color: white; text-decoration: none;")`</span><span class="material-symbols-outlined" style="color: white; font-size: 42px;">arrow_outward</span></div>
+
+:::
+
+:::
+
+<!-- <div style="background-color: blue; height: 191.8px;">"Teste"</div> -->
+
+<!-- Line 9 - support -->
+::: {id="partners" style="background-color: #e3e3e3; min-height: 212px; padding-left: 20px; padding-right: 20px; padding-top: 50px; padding-bottom: 30px;"}
+
+This report was generated with data from our partners:
+
+<img src="images/partners.png" width="100%">
+
+:::
+
+<!-- Line 10 - footer -->
+::: {style="background-color: #545454; display: flex;     flex-direction: row; justify-content: space-between; padding-top: 10px; padding-bottom: 10px; padding-right: 20px; padding-left: 20px"}
+
+<div><span style="color: white;">Report generated on `{r} format(Sys.Date(), "%d %B %Y")` through the OBIS report tool</span></div>
+<div><span class="material-symbols-outlined" style="color: white;">arrow_outward</span></div>
+
+:::
+
+
+
+<!-- Other codes -->
+<!--
+<div class="content">
+  <div class="screen-only">This is visible on screen.</div>
+  <div class="print-only">This is only visible when printing.</div>
+</div>
+
+<style>
+.print-only {
+  display: none;
+}
+@media print {
+  .screen-only {
+    display: none;
+  }
+  .print-only {
+    display: block;
+  }
+}
+</style>
+-->

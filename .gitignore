@@ -1,0 +1,62 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# macOS system files
+.DS_Store
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Flask session, debug logs
+instance/
+*.log
+
+# Compiled Jupyter Notebooks
+*.nbconvert.ipynb
+
+# VSCode & IDE config
+.vscode/
+.idea/
+
+# Quarto + build output
+*.html
+*.pdf
+*.zip
+
+# Output folders
+static/reports/*
+!static/reports/.gitkeep
+
+# Python egg files
+*.egg-info/
+.eggs/
+
+# pip environment files
+pip-wheel-metadata/
+__pypackages__/
+
+# R build files
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# R cache and libraries
+.Rcache/
+.Rcheck/
+.Rlib/
+
+# pandoc intermediate files
+*.utf8.md
+*.knit.md
+*.md
+
+# Quarto metadata
+.quarto/
+
+# node_modules if you happen to use JS tools
+node_modules/
