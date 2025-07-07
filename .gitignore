@@ -24,6 +24,8 @@ instance/
 
 # Quarto + build output
 *.html
+!index.html
+!material-symbols.html
 *.pdf
 *.zip
 
