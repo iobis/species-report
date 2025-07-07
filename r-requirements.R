@@ -1,0 +1,1 @@
+install.packages(c('ggplot2', 'dplyr', 'pagedown', 'httr', 'jsonlite', 'sf'), repos='https://cloud.r-project.org')
